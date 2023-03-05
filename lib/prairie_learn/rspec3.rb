@@ -1,71 +1,63 @@
 module PrairieLearn
   class RSpec3
+    require 'json'
+    require 'fileutils'
+    
+    # @see https://prairielearn.readthedocs.io/en/latest/externalGrading/
+
+    # see ../prairie_learn.rb for which callbacks are registered.  This is the new,
+    # less-intuitive way of doing things with Rspec 3
 
     def initialize(output)
-      @output = output
+      @output_stream = output
       @total_points = 0
       @passed_points = 0
+      @tests = []               # array of TestCase structs
       @current_test_case = nil # when an example starts, this gets set to a hash that will capture example's results
-      @results = {
-        # optional fields:
-        #"score" => 100.0, # total; required if not on each test case below. Overrides total if specified.
-        # "execution_time" => 0, #  seconds
-        # "output" => "Text relevant to the entire submission",
-        # "visibility" => "after_due_date", # visibility setting
-        # "stdout_visibility" => "visible", # stdout visibility setting, if tests write things on stdout
-        # "extra_data" => {},     # Optional extra data to be stored
-        "tests" => [ ]    # Optional, but required if no top-level score
-      }
+      @sequence = 0
     end
 
     # @see https://www.rubydoc.info/gems/rspec-core/RSpec/Core/Notifications
     # @see https://www.rubydoc.info/gems/rspec-core/RSpec/Core/Example
     def example_started(notification)
       example = notification.example # an instance of RSpec::Core::Example
-      points = extract_points(example)
-      if points > 0
-        @current_test_case = {
-          'max_score' => points,
-          'name' => example.full_description,
-          'output' => ''
-          # "number" =>  "1.1", # optional (will just be numbered in order of array if no number given)
-          # "output" =>  "Giant multiline string that will be placed in a <pre> tag and collapsed by default", # optional
-          # "tags" =>  ["tag1", "tag2", "tag3"], # optional
-          # "visibility" =>  "visible", # Optional visibility setting
-          # "extra_data" =>  {} # Optional extra data to be stored
-        }
-      else
-        @current_test_case = nil # this prevents other methods from trying to fill in
-      end
+      @sequence += 1
+      @current_test_case = PrairieLearn::TestCase.new(
+        :name =>        @sequence,
+        :description => example.full_description,
+        :max_points => extract_points(example),
+        :output => '',
+        :message => '')
     end
 
     def example_passed(notification)
-      if @current_test_case
-        @current_test_case['score'] = @current_test_case['max_score']
-        @results['tests'] << @current_test_case
-      end
+      @current_test_case.points = @current_test_case.max_points
+      @current_test_case.output = DEFAULT_PASS_MESSAGE
+      @output_stream.puts "#{@sequence.sprintf('%2d')}. #{DEFAULT_PASS_MESSAGE}"
+      @tests << @current_test_case
     end
 
     def example_failed(notification)
-      if @current_test_case
-        fail_exception = notification.example.exception # the reason the test failed
-        @current_test_case['output'] = fail_exception.message
-        @current_test_case['score'] = 0
-        @results['tests'] << @current_test_case
-      end
+      fail_exception = notification.example.exception # the reason the test failed
+      @current_test_case.output = fail_exception.message
+      @current_test_case.points = 0
+      @output_stream.puts "#{@sequence.sprintf('%2d')}. #{DEFAULT_FAIL_MESSAGE}"
+      @tests << @current_test_case
     end
 
     def example_pending(notification)
-      # make sure we DON'T even try to count this test case
-      @current_test_case = nil
+      # make sure we DON'T even try to count this test case in total points
+      @current_test_case.points = @current_test_case.max_points = 0
+      @tests << @current_test_case
     end
 
     def close(notification)
-      # write all output to results.json
+      # write all output to results/results.json
       # choose between pretty vs. uglified/compacted JSON here:
-      output = JSON.pretty_generate(@results)
+      output = JSON.pretty_generate(self)
       # output = @results.to_json
-      File.open("results.json", "w") do |f|
+      FileUtils.mkdir_p(File.dirname('results'))
+      File.open("results/results.json", "w") do |f|
         f.puts output
       end
     end
