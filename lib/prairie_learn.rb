@@ -1,11 +1,10 @@
-puts "**loading**"
 module PrairieLearn
   autoload :Cucumber, 'prairie_learn/cucumber'
   autoload :Cucumber3, 'prairie_learn/cucumber3'
-  autoload :MiniTest, 'prairie_learn/minitest/unit'
-  autoload :RSpec, 'prairie_learn/rspec'
+  # autoload :MiniTest, 'prairie_learn/minitest/unit'
+  # autoload :RSpec, 'prairie_learn/rspec'
   autoload :RSpec3, 'prairie_learn/rspec3'
-  autoload :Spec, 'prairie_learn/spec'
+  # autoload :Spec, 'prairie_learn/spec'
 
   def cucumber3?
     defined?(::Cucumber) && ::Cucumber::VERSION >= '3'
@@ -27,7 +26,6 @@ module PrairieLearn
   module_function :rspec3?
 
   if rspec3?
-    puts "**rspec3 detect"
     # This needs to be run before `.new` is called, so putting it inside the
     # autoloaded rspec3 file will not work.
     ::RSpec::Core::Formatters.register(self,
