@@ -1,7 +1,5 @@
 module PrairieLearn
   class RSpec3
-    require 'json'
-    require 'fileutils'
     
     # @see https://prairielearn.readthedocs.io/en/latest/externalGrading/
 
@@ -10,10 +8,13 @@ module PrairieLearn
 
     def initialize(output)
       @output_stream = output
-      @total_points = 0
-      @passed_points = 0
-      @tests = []               # array of TestCase structs
-      @current_test_case = nil # when an example starts, this gets set to a hash that will capture example's results
+      @test_report = PrairieLearn::TestReport.new(
+        :gradable => true,
+        :score => 0.0,
+        :message => 'Tests ran successfully',
+        :output => '',
+        :tests => [])
+      @current_test_case = nil # when an example starts, this gets set to a struct that will capture example's results
       @sequence = 0
     end
 
@@ -23,8 +24,9 @@ module PrairieLearn
       example = notification.example # an instance of RSpec::Core::Example
       @sequence += 1
       @current_test_case = PrairieLearn::TestCase.new(
-        :name =>        @sequence,
+        :name => "Test #{@sequence}",
         :description => example.full_description,
+        :points => 0,
         :max_points => extract_points(example),
         :output => '',
         :message => '')
@@ -33,36 +35,33 @@ module PrairieLearn
     def example_passed(notification)
       @current_test_case.points = @current_test_case.max_points
       @current_test_case.output = DEFAULT_PASS_MESSAGE
-      @output_stream.puts "#{@sequence.sprintf('%2d')}. #{DEFAULT_PASS_MESSAGE}"
-      @tests << @current_test_case
+      @test_report.output << sprintf("%2d. %s", @sequence, DEFAULT_PASS_MESSAGE)
+      @test_report.tests << @current_test_case
     end
 
     def example_failed(notification)
       fail_exception = notification.example.exception # the reason the test failed
       @current_test_case.output = fail_exception.message
       @current_test_case.points = 0
-      @output_stream.puts "#{@sequence.sprintf('%2d')}. #{DEFAULT_FAIL_MESSAGE}"
-      @tests << @current_test_case
+      @test_report.output << sprintf("%2d. %s", @sequence, DEFAULT_FAIL_MESSAGE)
+      @test_report.tests << @current_test_case
     end
 
     def example_pending(notification)
+      @test_report.output << sprintf("%2d. %s", @sequence, DEFAULT_UNEXECUTED_MESSAGE)
       # make sure we DON'T even try to count this test case in total points
-      @current_test_case.points = @current_test_case.max_points = 0
-      @tests << @current_test_case
+      @current_test_case.points =
+        @current_test_case.max_points = 0
+      @test_report.tests << @current_test_case
     end
 
     def close(notification)
-      # write all output to results/results.json
-      # choose between pretty vs. uglified/compacted JSON here:
-      output = JSON.pretty_generate(self)
-      # output = @results.to_json
-      FileUtils.mkdir_p(File.dirname('results'))
-      File.open("results/results.json", "w") do |f|
-        f.puts output
-      end
+      json = PrairieLearn.finalize_and_jsonify(@test_report)
+      @output_stream.puts json
     end
 
     private
+
     def extract_points(example)
       # if an example's metadata has :points => N, extract that.
       # elsif its description includes "[N points]", extract that.
